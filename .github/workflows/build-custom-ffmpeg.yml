@@ -48,5 +48,14 @@ jobs:
             strip ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
             echo "FFmpeg 已瘦身"
           else
-            echo "警告: 找](#)
-
+            echo "警告: 找不到 ffmpeg.exe"
+          fi
+
+      - name: Upload FFmpeg
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-binaries
+          path: |
+            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+          if-no-files-found: warn
