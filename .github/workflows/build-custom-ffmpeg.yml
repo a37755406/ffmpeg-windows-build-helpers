@@ -17,68 +17,65 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full texinfo
 
-      - name: Setup FFmpeg build
+      - name: Clone and inspect build script
         run: |
-          # 克隆 FFmpeg 编译脚本
           git clone --depth 1 https://github.com/rdp/ffmpeg-windows-build-helpers.git
           cd ffmpeg-windows-build-helpers
           
-          # 显示脚本存在
+          echo "=== 脚本信息 ==="
           ls -lh cross_compile_ffmpeg.sh
           
-          # 修改脚本，删除不需要的库
+          echo "=== 支持的命令 ==="
+          ./cross_compile_ffmpeg.sh -h 2>&1 | head -30
+
+      - name: Run FFmpeg build
+        run: |
+          cd ffmpeg-windows-build-helpers
+          
+          echo "=== 修改编译配置 ==="
           sed -i 's/--enable-libvpx//g' cross_compile_ffmpeg.sh
           sed -i 's/--enable-libdav1d//g' cross_compile_ffmpeg.sh
           sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
           sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
           
-          # 开始编译 - 使用快速编译参数
+          echo "=== 开始编译 FFmpeg ==="
           chmod +x cross_compile_ffmpeg.sh
-          echo "开始编译 FFmpeg..."
-          # 使用 -d 参数快速编译（64位，跳过一些耗时步骤）
-          ./cross_compile_ffmpeg.sh -d --sandbox-ok=y 2>&1 | tee build.log
+          # 使用最简单的参数组合，自动应答所有提示
+          yes "" | ./cross_compile_ffmpeg.sh -d --sandbox-ok=y 2>&1 | tail -100
           
-          # 保存日志供检查
-          tail -100 build.log
+          echo ""
+          echo "=== 编译完成，查找产物 ==="
+          find . -name "ffmpeg.exe" -type f
+          find . -name "ffmpeg" -type f -executable 2>/dev/null | head -5
+          
+          echo ""
+          echo "=== 检查 sandbox 目录 ==="
+          ls -la sandbox/ 2>/dev/null || echo "sandbox 目录不存在"
+          
+          if [ -d "sandbox/win64" ]; then
+            echo "win64 内容:"
+            find sandbox/win64 -type f -name "ffmpeg*" 2>/dev/null | head -10
+          fi
+          
+          if [ -d "sandbox/x86_64" ]; then
+            echo "x86_64 内容:"
+            find sandbox/x86_64 -type f -name "ffmpeg*" 2>/dev/null | head -10
+          fi
 
-      - name: Find and strip FFmpeg
-        if: success()
+      - name: Locate artifacts
+        if: always()
         run: |
-          echo "查找编译的 FFmpeg..."
-          find . -name "ffmpeg.exe" -type f 2>/dev/null || echo "未找到 ffmpeg.exe"
+          echo "=== 搜索所有可能的输出位置 ==="
+          find . -name "*.exe" -type f 2>/dev/null | grep -E "(ffmpeg|ffplay|ffprobe)" | head -20
           
-          # 尝试多个可能的路径
-          for path in \
-            "ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe" \
-            "ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe" \
-            "sandbox/win64/ffmpeg_git/ffmpeg.exe" \
-            "sandbox/x86_64/ffmpeg_git/ffmpeg.exe"
-          do
-            if [ -f "$path" ]; then
-              echo "找到: $path"
-              strip "$path" 2>/dev/null || true
-              echo "FFmpeg 已瘦身"
-              break
-            fi
-          done
+          echo ""
+          echo "=== 检查当前目录结构 ==="
+          ls -la ffmpeg-windows-build-helpers/ 2>/dev/null | head -20
 
-      - name: Upload FFmpeg
+      - name: Upload any artifacts found
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-binaries
-          path: |
-            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
-            ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
-            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/build.log
+          name: ffmpeg-build-output
+          path: ffmpeg-windows-build-helpers/sandbox/
           if-no-files-found: warn
-
-      - name: Show build log on failure
-        if: failure()
-        run: |
-          echo "==== 编译日志 ===="
-          if [ -f "ffmpeg-windows-build-helpers/build.log" ]; then
-            tail -200 ffmpeg-windows-build-helpers/build.log
-          else
-            echo "未找到构建日志"
-          fi
