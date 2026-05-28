@@ -6,14 +6,16 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4.3.0
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full
+          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full texinfo
 
       - name: Setup FFmpeg build
         run: |
@@ -30,32 +32,53 @@ jobs:
           sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
           sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
           
-          # 开始编译 - 使用正确的参数
+          # 开始编译 - 使用快速编译参数
           chmod +x cross_compile_ffmpeg.sh
           echo "开始编译 FFmpeg..."
-          ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --build-ffmpeg-shared=n
+          # 使用 -d 参数快速编译（64位，跳过一些耗时步骤）
+          ./cross_compile_ffmpeg.sh -d --sandbox-ok=y 2>&1 | tee build.log
+          
+          # 保存日志供检查
+          tail -100 build.log
 
       - name: Find and strip FFmpeg
+        if: success()
         run: |
           echo "查找编译的 FFmpeg..."
-          find . -name "ffmpeg.exe" -type f
+          find . -name "ffmpeg.exe" -type f 2>/dev/null || echo "未找到 ffmpeg.exe"
           
-          # 尝试两个可能的路径
-          if [ -f "ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe" ]; then
-            strip ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
-            echo "FFmpeg 已瘦身"
-          elif [ -f "ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe" ]; then
-            strip ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
-            echo "FFmpeg 已瘦身"
-          else
-            echo "警告: 找不到 ffmpeg.exe"
-          fi
+          # 尝试多个可能的路径
+          for path in \
+            "ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe" \
+            "ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe" \
+            "sandbox/win64/ffmpeg_git/ffmpeg.exe" \
+            "sandbox/x86_64/ffmpeg_git/ffmpeg.exe"
+          do
+            if [ -f "$path" ]; then
+              echo "找到: $path"
+              strip "$path" 2>/dev/null || true
+              echo "FFmpeg 已瘦身"
+              break
+            fi
+          done
 
       - name: Upload FFmpeg
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-binaries
           path: |
             ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
             ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/build.log
           if-no-files-found: warn
+
+      - name: Show build log on failure
+        if: failure()
+        run: |
+          echo "==== 编译日志 ===="
+          if [ -f "ffmpeg-windows-build-helpers/build.log" ]; then
+            tail -200 ffmpeg-windows-build-helpers/build.log
+          else
+            echo "未找到构建日志"
+          fi
