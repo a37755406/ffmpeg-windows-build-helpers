@@ -1,47 +1,67 @@
 name: Build Custom FFmpeg
 
 on:
-  workflow_dispatch: # 允许你在网页上点击按钮手动触发编译
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.3.0
+
+      - name: Clone FFmpeg build script
+        run: |
+          echo "Cloning FFmpeg build helpers..."
+          git clone --depth 1 https://github.com/rdp/ffmpeg-windows-build-helpers.git ffmpeg-builder
+          echo "Checking for script..."
+          ls -la ffmpeg-builder/
+          chmod +x ffmpeg-builder/cross_compile_ffmpeg.sh
+          echo "Script ready!"
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm subversion p7zip-full
+          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full
 
       - name: Custom Optimize Script
         run: |
-          # 【核心瘦身操作】修改脚本配置，关闭没用的重型第三方格式
-          # 监控软件一般只需要 H264/H265 解码以及 MP4 封装，这里把不需要的库直接从编译单里去掉
-          sed -i 's/--enable-libvpx//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libdav1d//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
+          echo "Modifying cross_compile_ffmpeg.sh..."
+          sed -i 's/--enable-libvpx//g' ffmpeg-builder/cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libdav1d//g' ffmpeg-builder/cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libaom//g' ffmpeg-builder/cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libx265//g' ffmpeg-builder/cross_compile_ffmpeg.sh
+          echo "Script modified!"
           
       - name: Run Build
         run: |
-          # 开始编译 Windows 64位 静态精简版
+          cd ffmpeg-builder
+          echo "Starting FFmpeg build..."
           ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --disable-shared
 
       - name: Archive Production
         run: |
-          # 找到编译出来的 exe 并进行物理瘦身
-          # 脚本通常会把产物放在 sandbox/win64/ffmpeg_git/ 类似目录下
-          cd sandbox/win64/ffmpeg_git/ || cd sandbox/x86_64/ffmpeg_git/ || true
-          strip --strip-all ffmpeg.exe || true
+          cd ffmpeg-builder
+          echo "Looking for compiled FFmpeg..."
+          find . -name "ffmpeg.exe" -type f
+          if [ -d "sandbox/win64/ffmpeg_git" ]; then
+            cd sandbox/win64/ffmpeg_git
+          elif [ -d "sandbox/x86_64/ffmpeg_git" ]; then
+            cd sandbox/x86_64/ffmpeg_git
+          else
+            echo "Error: Could not find ffmpeg build directory"
+            exit 1
+          fi
+          if [ -f "ffmpeg.exe" ]; then
+            strip --strip-all ffmpeg.exe || true
+            echo "FFmpeg stripped successfully!"
+          fi
 
       - name: Upload FFmpeg Exe
         uses: actions/upload-artifact@v4
         with:
           name: ffmpeg-stripped-binaries
           path: |
-            sandbox/win64/ffmpeg_git/ffmpeg.exe
-            sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-builder/sandbox/win64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-builder/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+          if-no-files-found: warn
