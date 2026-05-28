@@ -1,0 +1,45 @@
+name: Build Custom FFmpeg
+
+on:
+  workflow_dispatch: # 允许你在网页上点击按钮手动触发编译
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm subversion p7zip-full
+
+      - name: Custom Optimize Script
+        run: |
+          # 【核心瘦身操作】修改脚本配置，关闭没用的重型第三方格式
+          # 监控软件一般只需要 H264/H265 解码以及 MP4 封装，这里把不需要的库直接从编译单里去掉
+          sed -i 's/--enable-libvpx//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libdav1d//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
+          
+      - name: Run Build
+        run: |
+          # 开始编译 Windows 64位 静态精简版
+          ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --disable-shared
+
+      - name: Archive Production
+        run: |
+          # 找到编译出来的 exe 并进行物理瘦身
+          # 脚本通常会把产物放在 sandbox/win64/ffmpeg_git/ 类似目录下
+          cd sandbox/win64/ffmpeg_git/ || cd sandbox/x86_64/ffmpeg_git/ || true
+          strip --strip-all ffmpeg.exe || true
+
+      - name: Upload FFmpeg Exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-stripped-binaries
+          path: |
+            sandbox/win64/ffmpeg_git/ffmpeg.exe
+            sandbox/x86_64/ffmpeg_git/ffmpeg.exe
