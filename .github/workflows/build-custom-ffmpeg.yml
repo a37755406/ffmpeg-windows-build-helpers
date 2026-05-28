@@ -10,58 +10,52 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4.3.0
 
-      - name: Clone FFmpeg build script
-        run: |
-          echo "Cloning FFmpeg build helpers..."
-          git clone --depth 1 https://github.com/rdp/ffmpeg-windows-build-helpers.git ffmpeg-builder
-          echo "Checking for script..."
-          ls -la ffmpeg-builder/
-          chmod +x ffmpeg-builder/cross_compile_ffmpeg.sh
-          echo "Script ready!"
-
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full
 
-      - name: Custom Optimize Script
+      - name: Setup FFmpeg build
         run: |
-          echo "Modifying cross_compile_ffmpeg.sh..."
-          sed -i 's/--enable-libvpx//g' ffmpeg-builder/cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libdav1d//g' ffmpeg-builder/cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libaom//g' ffmpeg-builder/cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libx265//g' ffmpeg-builder/cross_compile_ffmpeg.sh
-          echo "Script modified!"
+          # 克隆 FFmpeg 编译脚本
+          git clone --depth 1 https://github.com/rdp/ffmpeg-windows-build-helpers.git
+          cd ffmpeg-windows-build-helpers
           
-      - name: Run Build
-        run: |
-          cd ffmpeg-builder
-          echo "Starting FFmpeg build..."
+          # 显示脚本存在
+          ls -lh cross_compile_ffmpeg.sh
+          
+          # 修改脚本，删除不需要的库
+          sed -i 's/--enable-libvpx//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libdav1d//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
+          sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
+          
+          # 开始编译
+          chmod +x cross_compile_ffmpeg.sh
+          echo "开始编译 FFmpeg..."
           ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --disable-shared
 
-      - name: Archive Production
+      - name: Find and strip FFmpeg
         run: |
-          cd ffmpeg-builder
-          echo "Looking for compiled FFmpeg..."
+          echo "查找编译的 FFmpeg..."
           find . -name "ffmpeg.exe" -type f
-          if [ -d "sandbox/win64/ffmpeg_git" ]; then
-            cd sandbox/win64/ffmpeg_git
-          elif [ -d "sandbox/x86_64/ffmpeg_git" ]; then
-            cd sandbox/x86_64/ffmpeg_git
+          
+          # 尝试两个可能的路径
+          if [ -f "ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe" ]; then
+            strip ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
+            echo "FFmpeg 已瘦身"
+          elif [ -f "ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe" ]; then
+            strip ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+            echo "FFmpeg 已瘦身"
           else
-            echo "Error: Could not find ffmpeg build directory"
-            exit 1
-          fi
-          if [ -f "ffmpeg.exe" ]; then
-            strip --strip-all ffmpeg.exe || true
-            echo "FFmpeg stripped successfully!"
+            echo "警告: 找不到 ffmpeg.exe"
           fi
 
-      - name: Upload FFmpeg Exe
+      - name: Upload FFmpeg
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-stripped-binaries
+          name: ffmpeg-binaries
           path: |
-            ffmpeg-builder/sandbox/win64/ffmpeg_git/ffmpeg.exe
-            ffmpeg-builder/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
+            ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
           if-no-files-found: warn
