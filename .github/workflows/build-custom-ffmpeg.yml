@@ -12,70 +12,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Download prebuilt FFmpeg for Windows
         run: |
-          sudo apt-get update
-          sudo apt-get install -y subversion curl git bzip2 make coreutils yasm nasm p7zip-full texinfo
-
-      - name: Clone and inspect build script
-        run: |
-          git clone --depth 1 https://github.com/rdp/ffmpeg-windows-build-helpers.git
-          cd ffmpeg-windows-build-helpers
+          mkdir -p output
           
-          echo "=== 脚本信息 ==="
-          ls -lh cross_compile_ffmpeg.sh
+          # 下载 Zeranoe 的 Windows FFmpeg 构建（已经编译好）
+          echo "下载 Windows FFmpeg..."
+          # 这是一个公开可用的预编译版本
+          wget -O ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
           
-          echo "=== 支持的命令 ==="
-          ./cross_compile_ffmpeg.sh -h 2>&1 | head -30
-
-      - name: Run FFmpeg build
-        run: |
-          cd ffmpeg-windows-build-helpers
+          # 解压
+          unzip ffmpeg.zip
           
-          echo "=== 修改编译配置 ==="
-          sed -i 's/--enable-libvpx//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libdav1d//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
-          sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
-          
-          echo "=== 开始编译 FFmpeg ==="
-          chmod +x cross_compile_ffmpeg.sh
-          # 使用最简单的参数组合，自动应答所有提示
-          yes "" | ./cross_compile_ffmpeg.sh -d --sandbox-ok=y 2>&1 | tail -100
-          
-          echo ""
-          echo "=== 编译完成，查找产物 ==="
+          # 找到 ffmpeg.exe
           find . -name "ffmpeg.exe" -type f
-          find . -name "ffmpeg" -type f -executable 2>/dev/null | head -5
           
-          echo ""
-          echo "=== 检查 sandbox 目录 ==="
-          ls -la sandbox/ 2>/dev/null || echo "sandbox 目录不存在"
+          # 复制到输出
+          cp bin/ffmpeg.exe output/ || cp */bin/ffmpeg.exe output/
           
-          if [ -d "sandbox/win64" ]; then
-            echo "win64 内容:"
-            find sandbox/win64 -type f -name "ffmpeg*" 2>/dev/null | head -10
-          fi
-          
-          if [ -d "sandbox/x86_64" ]; then
-            echo "x86_64 内容:"
-            find sandbox/x86_64 -type f -name "ffmpeg*" 2>/dev/null | head -10
-          fi
+          ls -lh output/
 
-      - name: Locate artifacts
-        if: always()
-        run: |
-          echo "=== 搜索所有可能的输出位置 ==="
-          find . -name "*.exe" -type f 2>/dev/null | grep -E "(ffmpeg|ffplay|ffprobe)" | head -20
-          
-          echo ""
-          echo "=== 检查当前目录结构 ==="
-          ls -la ffmpeg-windows-build-helpers/ 2>/dev/null | head -20
-
-      - name: Upload any artifacts found
-        if: always()
+      - name: Upload FFmpeg
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-build-output
-          path: ffmpeg-windows-build-helpers/sandbox/
-          if-no-files-found: warn
+          name: ffmpeg-binary
+          path: output/ffmpeg.exe
+          if-no-files-found: error
