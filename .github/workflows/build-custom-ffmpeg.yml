@@ -30,10 +30,10 @@ jobs:
           sed -i 's/--enable-libaom//g' cross_compile_ffmpeg.sh
           sed -i 's/--enable-libx265//g' cross_compile_ffmpeg.sh
           
-          # 开始编译
+          # 开始编译 - 使用正确的参数
           chmod +x cross_compile_ffmpeg.sh
           echo "开始编译 FFmpeg..."
-          ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --disable-shared
+          ./cross_compile_ffmpeg.sh --compiler-flavors=win64 --build-ffmpeg-static=y --build-ffmpeg-shared=n
 
       - name: Find and strip FFmpeg
         run: |
@@ -48,14 +48,5 @@ jobs:
             strip ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
             echo "FFmpeg 已瘦身"
           else
-            echo "警告: 找不到 ffmpeg.exe"
-          fi
-
-      - name: Upload FFmpeg
-        uses: actions/upload-artifact@v4
-        with:
-          name: ffmpeg-binaries
-          path: |
-            ffmpeg-windows-build-helpers/sandbox/win64/ffmpeg_git/ffmpeg.exe
-            ffmpeg-windows-build-helpers/sandbox/x86_64/ffmpeg_git/ffmpeg.exe
-          if-no-files-found: warn
+            echo "警告: 找](#)
+
