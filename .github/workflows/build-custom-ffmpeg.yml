@@ -7,40 +7,50 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # 告诉 GitHub Actions 认可 Node 24，消除强转警告
+      ACTIONS_AUDIT_NODE_VERSION: "24"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Download and Strip FFmpeg
+      - name: Download and Process Mini FFmpeg
         run: |
           mkdir -p output
           
-          echo "1. 下载官方轻量基础版 (Essential)..."
-          # 这里改用 essential 版本，体积比你之前下载的 gpl 完整版小了一大半
-          wget -O ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared-essential.zip || \
-          wget -O ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-essential.zip
+          echo "1. 从 GitHub 镜像源精准下载轻量基础版..."
+          # 这里换成了专用的轻量 static 稳定包源
+          wget -q --show-progress -O ffmpeg.zip https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip
           
-          echo "2. 解压文件..."
-          unzip ffmpeg.zip
+          echo "2. 检查下载文件大小，确保没有下载失败..."
+          ls -lh ffmpeg.zip
           
-          echo "3. 提取核心 ffmpeg.exe..."
-          # 动态寻找并复制 ffmpeg.exe 到 output 目录
+          echo "3. 解压文件..."
+          unzip -q ffmpeg.zip
+          
+          echo "4. 正在全局搜寻并将 ffmpeg.exe 提取到输出目录..."
           find . -name "ffmpeg.exe" -type f -exec cp {} output/ \;
           
-          echo "4. 安装 Linux 交叉编译工具链（用于给 Windows 的 exe 瘦身）..."
-          sudo apt-get update && sudo apt-get install -y binutils-mingw-w64-x86-64
+          echo "5. 检查提取出来的初始体积："
+          ls -lh output/ffmpeg.exe || { echo "错误：未找到 ffmpeg.exe"; exit 1; }
           
-          echo "5. 物理瘦身：剥离调试符号 (Strip)..."
-          # 这一步非常关键！能把 exe 内部没用的调试代码和符号表彻底删掉，直接切掉很大一部分体积
+          echo "6. 安装 Windows 二进制优化工具链..."
+          sudo apt-get update && sudo apt-get install -y binutils-mingw-w64-x86-64 upx-ucl
+          
+          echo "7. 【第一道瘦身】彻底剥离调试信息 (Strip)..."
           x86_64-w64-mingw32-strip --strip-all output/ffmpeg.exe || true
+          echo "剥离后体积："
+          ls -lh output/ffmpeg.exe
           
-          echo "6. 检查瘦身后的最终体积："
+          echo "8. 【第二道极限瘦身】使用 UPX 进行物理压缩加壳..."
+          # 这一步能把 exe 的体积再次压缩 50% 以上，直接压到十几兆！
+          upx --best output/ffmpeg.exe || true
+          
+          echo "9. 💡 恭喜！最终提供给监控软件的成品体积为："
           ls -lh output/ffmpeg.exe
 
-      - name: Upload Stripped FFmpeg
+      - name: Upload Finished FFmpeg
         uses: actions/upload-artifact@v4
         with:
-          name: ffmpeg-mini-binary
+          name: ffmpeg-super-mini
           path: output/ffmpeg.exe
           if-no-files-found: error
